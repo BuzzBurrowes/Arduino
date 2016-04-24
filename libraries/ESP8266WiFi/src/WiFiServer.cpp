@@ -35,7 +35,6 @@ extern "C" {
 #include "lwip/opt.h"
 #include "lwip/tcp.h"
 #include "lwip/inet.h"
-#include "cbuf.h"
 #include "include/ClientContext.h"
 
 WiFiServer::WiFiServer(IPAddress addr, uint16_t port)
@@ -82,19 +81,11 @@ void WiFiServer::begin() {
 }
 
 void WiFiServer::setNoDelay(bool nodelay) {
-    if (!_pcb)
-      return;
-
-    if (nodelay)
-        tcp_nagle_disable(_pcb);
-    else
-        tcp_nagle_enable(_pcb);
+    _noDelay = nodelay;
 }
 
 bool WiFiServer::getNoDelay() {
-    if (!_pcb)
-        return false;
-    return tcp_nagle_disabled(_pcb);
+    return _noDelay;
 }
 
 bool WiFiServer::hasClient() {
@@ -107,6 +98,7 @@ WiFiClient WiFiServer::available(byte* status) {
     if (_unclaimed) {
         WiFiClient result(_unclaimed);
         _unclaimed = _unclaimed->next();
+        result.setNoDelay(_noDelay);
         DEBUGV("WS:av\r\n");
         return result;
     }

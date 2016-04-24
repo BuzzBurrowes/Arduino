@@ -38,11 +38,13 @@ File system size depends on the flash chip size. Depending on the board which is
 
 Board | Flash chip size, bytes | File system size, bytes
 ------|-----------------|-----------------
-Generic module | 512k | 64k
+Generic module | 512k | 64k, 128k
 Generic module | 1M | 64k, 128k, 256k, 512k
 Generic module | 2M | 1M
 Generic module | 4M | 3M
 Adafruit HUZZAH | 4M | 1M, 3M
+ESPresso Lite 1.0 | 4M | 1M, 3M
+ESPresso Lite 2.0 | 4M | 1M, 3M
 NodeMCU 0.9    | 4M | 1M, 3M
 NodeMCU 1.0    | 4M | 1M, 3M
 Olimex MOD-WIFI-ESP8266(-DEV)| 2M | 1M
@@ -61,7 +63,7 @@ ESPDuino | 4M | 1M, 3M
 
 *ESP8266FS* is a tool which integrates into the Arduino IDE. It adds a menu item to *Tools* menu for uploading the contents of sketch data directory into ESP8266 flash file system.
 
-- Download the tool: https://github.com/esp8266/arduino-esp8266fs-plugin/releases/download/0.1.3/ESP8266FS-0.1.3.zip.
+- Download the tool: https://github.com/esp8266/arduino-esp8266fs-plugin/releases/download/0.2.0/ESP8266FS-0.2.0.zip.
 - In your Arduino sketchbook directory, create `tools` directory if it doesn't exist yet
 - Unpack the tool into `tools` directory (the path will look like `<home_dir>/Arduino/tools/ESP8266FS/tool/esp8266fs.jar`)
 - Restart Arduino IDE
@@ -103,6 +105,28 @@ Opens a file. `path` should be an absolute path starting with a slash
 (e.g. `/dir/filename.txt`). `mode` is a string specifying access mode. It can be
 one of "r", "w", "a", "r+", "w+", "a+". Meaning of these modes is the same as
 for `fopen` C function.
+       
+       r      Open text file for reading.  The stream is positioned at the
+              beginning of the file.
+
+       r+     Open for reading and writing.  The stream is positioned at the
+              beginning of the file.
+
+       w      Truncate file to zero length or create text file for writing.
+              The stream is positioned at the beginning of the file.
+
+       w+     Open for reading and writing.  The file is created if it does
+              not exist, otherwise it is truncated.  The stream is
+              positioned at the beginning of the file.
+
+       a      Open for appending (writing at end of file).  The file is
+              created if it does not exist.  The stream is positioned at the
+              end of the file.
+
+       a+     Open for reading and appending (writing at end of file).  The
+              file is created if it does not exist.  The initial file
+              position for reading is at the beginning of the file, but
+              output is always appended to the end of the file.
 
 Returns *File* object. To check whether the file was opened successfully, use
 the boolean operator.

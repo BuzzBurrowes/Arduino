@@ -28,8 +28,13 @@
 #include "ESP8266WebServer.h"
 #include "FS.h"
 #include "detail/RequestHandlersImpl.h"
-// #define DEBUG
+
+//#define DEBUG_ESP_HTTP_SERVER
+#ifdef DEBUG_ESP_PORT
+#define DEBUG_OUTPUT DEBUG_ESP_PORT
+#else
 #define DEBUG_OUTPUT Serial
+#endif
 
 const char * AUTHORIZATION_HEADER = "Authorization";
 
@@ -75,6 +80,7 @@ ESP8266WebServer::~ESP8266WebServer() {
 }
 
 void ESP8266WebServer::begin() {
+  _currentStatus = HC_NONE;
   _server.begin();
   if(!_headerKeysCount)
     collectHeaders(0, 0);
@@ -87,7 +93,7 @@ bool ESP8266WebServer::authenticate(const char * username, const char * password
       authReq = authReq.substring(6);
       authReq.trim();
       char toencodeLen = strlen(username)+strlen(password)+1;
-      char *toencode = new char[toencodeLen];
+      char *toencode = new char[toencodeLen + 1];
       if(toencode == NULL){
         authReq = String();
         return false;
@@ -150,28 +156,67 @@ void ESP8266WebServer::serveStatic(const char* uri, FS& fs, const char* path, co
 }
 
 void ESP8266WebServer::handleClient() {
-  WiFiClient client = _server.available();
-  if (!client) {
-    return;
-  }
+  if (_currentStatus == HC_NONE) {
+    WiFiClient client = _server.available();
+    if (!client) {
+      return;
+    }
 
-#ifdef DEBUG
-  DEBUG_OUTPUT.println("New client");
+#ifdef DEBUG_ESP_HTTP_SERVER
+    DEBUG_OUTPUT.println("New client");
 #endif
 
-  // Wait for data from client to become available
-  uint16_t maxWait = HTTP_MAX_DATA_WAIT;
-  while(client.connected() && !client.available() && maxWait--){
-    delay(1);
+    _currentClient = client;
+    _currentStatus = HC_WAIT_READ;
+    _statusChange = millis();
   }
 
-  if (!_parseRequest(client)) {
+  if (!_currentClient.connected()) {
+    _currentClient = WiFiClient();
+    _currentStatus = HC_NONE;
     return;
   }
 
-  _currentClient = client;
-  _contentLength = CONTENT_LENGTH_NOT_SET;
-  _handleRequest();
+  // Wait for data from client to become available
+  if (_currentStatus == HC_WAIT_READ) {
+    if (!_currentClient.available()) {
+      if (millis() - _statusChange > HTTP_MAX_DATA_WAIT) {
+        _currentClient = WiFiClient();
+        _currentStatus = HC_NONE;
+      }
+      yield();
+      return;
+    }
+
+    if (!_parseRequest(_currentClient)) {
+      _currentClient = WiFiClient();
+      _currentStatus = HC_NONE;
+      return;
+    }
+
+    _contentLength = CONTENT_LENGTH_NOT_SET;
+    _handleRequest();
+
+    if (!_currentClient.connected()) {
+      _currentClient = WiFiClient();
+      _currentStatus = HC_NONE;
+      return;
+    } else {
+      _currentStatus = HC_WAIT_CLOSE;
+      _statusChange = millis();
+      return;
+    }
+  }
+
+  if (_currentStatus == HC_WAIT_CLOSE) {
+    if (millis() - _statusChange > HTTP_MAX_CLOSE_WAIT) {
+      _currentClient = WiFiClient();
+      _currentStatus = HC_NONE;
+    } else {
+      yield();
+      return;
+    }
+  }
 }
 
 void ESP8266WebServer::close() {
@@ -208,11 +253,10 @@ void ESP8266WebServer::_prepareHeader(String& response, int code, const char* co
         content_type = "text/html";
 
     sendHeader("Content-Type", content_type, true);
-    if (_contentLength != CONTENT_LENGTH_UNKNOWN && _contentLength != CONTENT_LENGTH_NOT_SET) {
-        sendHeader("Content-Length", String(_contentLength));
-    }
-    else if (contentLength > 0){
+    if (_contentLength == CONTENT_LENGTH_NOT_SET) {
         sendHeader("Content-Length", String(contentLength));
+    } else if (_contentLength != CONTENT_LENGTH_UNKNOWN) {
+        sendHeader("Content-Length", String(_contentLength));
     }
     sendHeader("Connection", "close");
     sendHeader("Access-Control-Allow-Origin", "*");
@@ -326,9 +370,10 @@ void ESP8266WebServer::sendContent_P(PGM_P content, size_t size) {
     }
 }
 
-String ESP8266WebServer::arg(const char* name) {
+
+String ESP8266WebServer::arg(String name) {
   for (int i = 0; i < _currentArgCount; ++i) {
-    if (_currentArgs[i].key == name)
+    if ( _currentArgs[i].key == name )
       return _currentArgs[i].value;
   }
   return String();
@@ -350,7 +395,7 @@ int ESP8266WebServer::args() {
   return _currentArgCount;
 }
 
-bool ESP8266WebServer::hasArg(const char* name) {
+bool ESP8266WebServer::hasArg(String  name) {
   for (int i = 0; i < _currentArgCount; ++i) {
     if (_currentArgs[i].key == name)
       return true;
@@ -358,7 +403,8 @@ bool ESP8266WebServer::hasArg(const char* name) {
   return false;
 }
 
-String ESP8266WebServer::header(const char* name) {
+
+String ESP8266WebServer::header(String name) {
   for (int i = 0; i < _headerKeysCount; ++i) {
     if (_currentHeaders[i].key == name)
       return _currentHeaders[i].value;
@@ -393,7 +439,7 @@ int ESP8266WebServer::headers() {
   return _headerKeysCount;
 }
 
-bool ESP8266WebServer::hasHeader(const char* name) {
+bool ESP8266WebServer::hasHeader(String name) {
   for (int i = 0; i < _headerKeysCount; ++i) {
     if ((_currentHeaders[i].key == name) &&  (_currentHeaders[i].value.length() > 0))
       return true;
@@ -416,13 +462,13 @@ void ESP8266WebServer::onNotFound(THandlerFunction fn) {
 void ESP8266WebServer::_handleRequest() {
   bool handled = false;
   if (!_currentHandler){
-#ifdef DEBUG
+#ifdef DEBUG_ESP_HTTP_SERVER
     DEBUG_OUTPUT.println("request handler not found");
 #endif
   }
   else {
     handled = _currentHandler->handle(*this, _currentMethod, _currentUri);
-#ifdef DEBUG
+#ifdef DEBUG_ESP_HTTP_SERVER
     if (!handled) {
       DEBUG_OUTPUT.println("request handler failed to handle request");
     }
@@ -438,56 +484,51 @@ void ESP8266WebServer::_handleRequest() {
     }
   }
 
-  uint16_t maxWait = HTTP_MAX_CLOSE_WAIT;
-  while(_currentClient.connected() && maxWait--) {
-    delay(1);
-  }
-  _currentClient   = WiFiClient();
-  _currentUri      = String();
+  _currentUri = String();
 }
 
-const char* ESP8266WebServer::_responseCodeToString(int code) {
+String ESP8266WebServer::_responseCodeToString(int code) {
   switch (code) {
-    case 100: return "Continue";
-    case 101: return "Switching Protocols";
-    case 200: return "OK";
-    case 201: return "Created";
-    case 202: return "Accepted";
-    case 203: return "Non-Authoritative Information";
-    case 204: return "No Content";
-    case 205: return "Reset Content";
-    case 206: return "Partial Content";
-    case 300: return "Multiple Choices";
-    case 301: return "Moved Permanently";
-    case 302: return "Found";
-    case 303: return "See Other";
-    case 304: return "Not Modified";
-    case 305: return "Use Proxy";
-    case 307: return "Temporary Redirect";
-    case 400: return "Bad Request";
-    case 401: return "Unauthorized";
-    case 402: return "Payment Required";
-    case 403: return "Forbidden";
-    case 404: return "Not Found";
-    case 405: return "Method Not Allowed";
-    case 406: return "Not Acceptable";
-    case 407: return "Proxy Authentication Required";
-    case 408: return "Request Time-out";
-    case 409: return "Conflict";
-    case 410: return "Gone";
-    case 411: return "Length Required";
-    case 412: return "Precondition Failed";
-    case 413: return "Request Entity Too Large";
-    case 414: return "Request-URI Too Large";
-    case 415: return "Unsupported Media Type";
-    case 416: return "Requested range not satisfiable";
-    case 417: return "Expectation Failed";
-    case 500: return "Internal Server Error";
-    case 501: return "Not Implemented";
-    case 502: return "Bad Gateway";
-    case 503: return "Service Unavailable";
-    case 504: return "Gateway Time-out";
-    case 505: return "HTTP Version not supported";
+    case 100: return F("Continue");
+    case 101: return F("Switching Protocols");
+    case 200: return F("OK");
+    case 201: return F("Created");
+    case 202: return F("Accepted");
+    case 203: return F("Non-Authoritative Information");
+    case 204: return F("No Content");
+    case 205: return F("Reset Content");
+    case 206: return F("Partial Content");
+    case 300: return F("Multiple Choices");
+    case 301: return F("Moved Permanently");
+    case 302: return F("Found");
+    case 303: return F("See Other");
+    case 304: return F("Not Modified");
+    case 305: return F("Use Proxy");
+    case 307: return F("Temporary Redirect");
+    case 400: return F("Bad Request");
+    case 401: return F("Unauthorized");
+    case 402: return F("Payment Required");
+    case 403: return F("Forbidden");
+    case 404: return F("Not Found");
+    case 405: return F("Method Not Allowed");
+    case 406: return F("Not Acceptable");
+    case 407: return F("Proxy Authentication Required");
+    case 408: return F("Request Time-out");
+    case 409: return F("Conflict");
+    case 410: return F("Gone");
+    case 411: return F("Length Required");
+    case 412: return F("Precondition Failed");
+    case 413: return F("Request Entity Too Large");
+    case 414: return F("Request-URI Too Large");
+    case 415: return F("Unsupported Media Type");
+    case 416: return F("Requested range not satisfiable");
+    case 417: return F("Expectation Failed");
+    case 500: return F("Internal Server Error");
+    case 501: return F("Not Implemented");
+    case 502: return F("Bad Gateway");
+    case 503: return F("Service Unavailable");
+    case 504: return F("Gateway Time-out");
+    case 505: return F("HTTP Version not supported");
     default:  return "";
   }
 }

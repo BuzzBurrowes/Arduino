@@ -23,13 +23,13 @@
 #endif
 
 enum rst_reason {
-	REASON_DEFAULT_RST		= 0,
-	REASON_WDT_RST			= 1,
-	REASON_EXCEPTION_RST	= 2,
-	REASON_SOFT_WDT_RST   	= 3,
-	REASON_SOFT_RESTART 	= 4,
-	REASON_DEEP_SLEEP_AWAKE	= 5,
-	REASON_EXT_SYS_RST      = 6
+	REASON_DEFAULT_RST		= 0,	/* normal startup by power on */
+	REASON_WDT_RST			= 1,	/* hardware watch dog reset */
+	REASON_EXCEPTION_RST	= 2,	/* exception reset, GPIO status won’t change */
+	REASON_SOFT_WDT_RST   	= 3,	/* software watch dog reset, GPIO status won’t change */
+	REASON_SOFT_RESTART 	= 4,	/* software restart ,system_restart , GPIO status won’t change */
+	REASON_DEEP_SLEEP_AWAKE	= 5,	/* wake up from deep-sleep */
+	REASON_EXT_SYS_RST      = 6		/* external system reset */
 };
 
 struct rst_info{
@@ -255,6 +255,8 @@ int wifi_station_set_cert_key(uint8 *client_cert, int client_cert_len,
     uint8 *private_key, int private_key_len,
     uint8 *private_key_passwd, int private_key_passwd_len);
 void wifi_station_clear_cert_key(void);
+int wifi_station_set_username(unsigned char*, int);
+void wifi_station_clear_username(void);
 
 struct softap_config {
     uint8 ssid[32];

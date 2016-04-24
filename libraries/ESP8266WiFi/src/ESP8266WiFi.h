@@ -1,6 +1,6 @@
 /*
  ESP8266WiFi.h - esp8266 Wifi support.
- Based on WiFi.h from Ardiono WiFi shield library.
+ Based on WiFi.h from Arduino WiFi shield library.
  Copyright (c) 2011-2014 Arduino.  All right reserved.
  Modified by Ivan Grokhotkov, December 2014
 
@@ -39,6 +39,17 @@ extern "C" {
 #include "WiFiClient.h"
 #include "WiFiServer.h"
 #include "WiFiClientSecure.h"
+
+#ifdef DEBUG_ESP_WIFI
+#ifdef DEBUG_ESP_PORT
+#define DEBUG_WIFI(...) DEBUG_ESP_PORT.printf( __VA_ARGS__ )
+#endif
+#endif
+
+#ifndef DEBUG_WIFI
+#define DEBUG_WIFI(...)
+#endif
+
 
 class ESP8266WiFiClass : public ESP8266WiFiGenericClass, public ESP8266WiFiSTAClass, public ESP8266WiFiScanClass, public ESP8266WiFiAPClass {
     public:
